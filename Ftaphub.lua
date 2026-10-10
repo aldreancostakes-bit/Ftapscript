@@ -1,9 +1,5 @@
--- FTP Script Hub v5 FINAL COMPLETE
--- Purple anime iris theme + cherry blossoms
--- Combat: Grab, Kill Aura, Silent Aim, Fling All, Gojo Techniques
--- Movement: Speed, Noclip, Inf Jump, Auto Fling, Swing Pallet
--- FPS: Potato, No Particles, No Shadows, Low Render, No Skybox
--- Third Person View
+-- FTP Script Hub v5 FIXED | Mobile | Arceus X
+-- All bugs fixed, new features added
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -19,6 +15,7 @@ local currentFOV     = 70
 local killAuraRange  = 20
 local silentAimFOV   = 80
 local flingAllPower  = 500
+local autoFlingRange = 60
 local swingBody      = nil
 local swingConn      = nil
 local origCF         = nil
@@ -28,14 +25,15 @@ local purpleActive   = false
 local redActive      = false
 local blueActive     = false
 local thirdPersonEnabled = false
-local tpConn         = nil
+local palletFlyEnabled   = false
+local palletFlyConn      = nil
 local savedLighting  = {}
 
 local state = {
     esp=false, reach=false, speed=false, noclip=false,
     ijump=false, fling=false, swing=false,
     killAura=false, silentAim=false, flingAll=false,
-    thirdPerson=false,
+    thirdPerson=false, palletFly=false,
     fps_potato=false, fps_particles=false,
     fps_shadows=false, fps_renderdist=false, fps_skybox=false,
 }
@@ -44,37 +42,54 @@ local state = {
 --  SCREEN GUI
 -- ══════════════════════════════════════════
 local sg = Instance.new("ScreenGui")
-sg.Name="FTPv5Final"; sg.ResetOnSpawn=false
+sg.Name="FTPv5Fixed"; sg.ResetOnSpawn=false
 sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
 sg.IgnoreGuiInset=true
 sg.Parent=game:GetService("CoreGui")
 
 -- ══════════════════════════════════════════
---  FLOATING ICON
+--  FLOATING ICON (minimize target)
 -- ══════════════════════════════════════════
 local icon=Instance.new("Frame")
-icon.Name="Icon"; icon.Size=UDim2.new(0,54,0,54)
+icon.Name="Icon"
+icon.Size=UDim2.new(0,54,0,54)
 icon.Position=UDim2.new(0,12,0.5,-27)
 icon.BackgroundColor3=Color3.fromRGB(18,4,36)
-icon.BorderSizePixel=0; icon.Visible=false; icon.ZIndex=10
+icon.BorderSizePixel=0
+icon.Visible=false
+icon.ZIndex=20
 icon.Parent=sg
 Instance.new("UICorner",icon).CornerRadius=UDim.new(1,0)
-local iStroke=Instance.new("UIStroke",icon)
-iStroke.Color=Color3.fromRGB(155,89,255); iStroke.Thickness=2
-local iLbl=Instance.new("TextLabel",icon)
-iLbl.Size=UDim2.new(1,0,1,0); iLbl.BackgroundTransparency=1
-iLbl.Text="✦"; iLbl.TextColor3=Color3.fromRGB(212,138,255)
-iLbl.TextSize=22; iLbl.Font=Enum.Font.GothamBold; iLbl.ZIndex=11
 
+local iStroke=Instance.new("UIStroke",icon)
+iStroke.Color=Color3.fromRGB(155,89,255); iStroke.Thickness=2.5
+
+local iLbl=Instance.new("TextLabel",icon)
+iLbl.Size=UDim2.new(1,0,1,0)
+iLbl.BackgroundTransparency=1
+iLbl.Text="✦"
+iLbl.TextColor3=Color3.fromRGB(212,138,255)
+iLbl.TextSize=24
+iLbl.Font=Enum.Font.GothamBold
+iLbl.ZIndex=21
+
+-- icon LED pulse
 task.spawn(function()
     while true do
-        TweenService:Create(iStroke,TweenInfo.new(1,Enum.EasingStyle.Sine),
-            {Color=Color3.fromRGB(200,100,255)}):Play() task.wait(1)
-        TweenService:Create(iStroke,TweenInfo.new(1,Enum.EasingStyle.Sine),
-            {Color=Color3.fromRGB(80,0,160)}):Play() task.wait(1)
+        if icon.Visible then
+            TweenService:Create(iStroke,TweenInfo.new(0.8,Enum.EasingStyle.Sine),
+                {Color=Color3.fromRGB(220,100,255)}):Play()
+            task.wait(0.8)
+            TweenService:Create(iStroke,TweenInfo.new(0.8,Enum.EasingStyle.Sine),
+                {Color=Color3.fromRGB(60,0,140)}):Play()
+            task.wait(0.8)
+        else
+            task.wait(0.3)
+        end
     end
 end)
 
+-- icon drag
 local iDrag,iDS,iSP=false,nil,nil
 icon.InputBegan:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.Touch
@@ -92,12 +107,21 @@ UserInputService.InputEnded:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.Touch
     or i.UserInputType==Enum.UserInputType.MouseButton1 then iDrag=false end
 end)
+
+-- tap icon to restore
+local iconTapTime=0
 icon.InputBegan:Connect(function(i)
     if i.UserInputType~=Enum.UserInputType.Touch
     and i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
-    task.delay(0.15,function()
-        if not iDrag then icon.Visible=false; sg.MainWin.Visible=true end
-    end)
+    iconTapTime=tick()
+end)
+icon.InputEnded:Connect(function(i)
+    if i.UserInputType~=Enum.UserInputType.Touch
+    and i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+    if tick()-iconTapTime<0.2 and not iDrag then
+        icon.Visible=false
+        sg.MainWin.Visible=true
+    end
 end)
 
 -- ══════════════════════════════════════════
@@ -151,13 +175,13 @@ pupil.BackgroundColor3=Color3.fromRGB(6,0,14)
 pupil.BorderSizePixel=0; pupil.ZIndex=2; pupil.Parent=win
 Instance.new("UICorner",pupil).CornerRadius=UDim.new(1,0)
 
-local highlight=Instance.new("Frame")
-highlight.Size=UDim2.new(0,16,0,16)
-highlight.Position=UDim2.new(0.5,8,0.28,-26)
-highlight.BackgroundColor3=Color3.fromRGB(220,180,255)
-highlight.BackgroundTransparency=0.6
-highlight.BorderSizePixel=0; highlight.ZIndex=3; highlight.Parent=win
-Instance.new("UICorner",highlight).CornerRadius=UDim.new(1,0)
+local hl2=Instance.new("Frame")
+hl2.Size=UDim2.new(0,16,0,16)
+hl2.Position=UDim2.new(0.5,8,0.28,-26)
+hl2.BackgroundColor3=Color3.fromRGB(220,180,255)
+hl2.BackgroundTransparency=0.6
+hl2.BorderSizePixel=0; hl2.ZIndex=3; hl2.Parent=win
+Instance.new("UICorner",hl2).CornerRadius=UDim.new(1,0)
 
 -- cherry blossoms
 local petalColors={
@@ -202,8 +226,8 @@ tBar.BorderSizePixel=0; tBar.ZIndex=5; tBar.Parent=win
 Instance.new("UICorner",tBar).CornerRadius=UDim.new(0,14)
 
 local tLbl=Instance.new("TextLabel")
-tLbl.Size=UDim2.new(1,-80,1,0); tLbl.Position=UDim2.new(0,12,0,0)
-tLbl.BackgroundTransparency=1; tLbl.Text="✦ FTP Hub v5 Final"
+tLbl.Size=UDim2.new(1,-90,1,0); tLbl.Position=UDim2.new(0,12,0,0)
+tLbl.BackgroundTransparency=1; tLbl.Text="✦ FTP Hub v5"
 tLbl.TextColor3=Color3.fromRGB(212,138,255)
 tLbl.TextSize=12; tLbl.Font=Enum.Font.GothamBold
 tLbl.TextXAlignment=Enum.TextXAlignment.Left
@@ -219,9 +243,14 @@ local function mkBtn(x,txt,bg,cb)
     b.MouseButton1Click:Connect(cb); return b
 end
 mkBtn(-32,"✕",Color3.fromRGB(160,30,30),function() sg:Destroy() end)
-mkBtn(-64,"◉",Color3.fromRGB(20,60,180),function()
-    win.Visible=false; icon.Visible=true end)
 
+-- MINIMIZE BUTTON → floating icon
+mkBtn(-64,"—",Color3.fromRGB(20,60,180),function()
+    win.Visible=false
+    icon.Visible=true
+end)
+
+-- window drag
 local wDrag,wDS,wSP=false,nil,nil
 tBar.InputBegan:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.Touch
@@ -452,14 +481,15 @@ local function mkStatusLbl(parent)
 end
 
 -- ══════════════════════════════════════════
---  GOJO HELPERS
+--  GOJO SPHERE HELPER
 -- ══════════════════════════════════════════
 local function spawnSphere(position,color,size,name)
     local part=Instance.new("Part")
     part.Name=name; part.Shape=Enum.PartType.Ball
     part.Size=Vector3.new(size,size,size); part.Position=position
     part.Anchored=true; part.CanCollide=false; part.CastShadow=false
-    part.Material=Enum.Material.Neon; part.Color=color; part.Parent=workspace
+    part.Material=Enum.Material.Neon; part.Color=color
+    part.Parent=workspace  -- goes into workspace = visible to ALL players
     local glow=Instance.new("Part")
     glow.Name=name.."Glow"; glow.Shape=Enum.PartType.Ball
     glow.Size=Vector3.new(size*1.6,size*1.6,size*1.6); glow.Position=position
@@ -467,27 +497,6 @@ local function spawnSphere(position,color,size,name)
     glow.Material=Enum.Material.Neon; glow.Color=color
     glow.Transparency=0.7; glow.Parent=workspace
     return part,glow
-end
-
-local function addHighlight(part,fillColor,outlineColor)
-    local hl=Instance.new("SelectionBox")
-    hl.Adornee=part; hl.Color3=outlineColor
-    hl.LineThickness=0.04; hl.SurfaceColor3=fillColor
-    hl.SurfaceTransparency=0.6; hl.Parent=workspace
-    return hl
-end
-
-local function pulseSize(part,glow,baseSize,duration)
-    task.spawn(function()
-        local t=0
-        while t<duration and part.Parent do
-            t=t+task.wait()
-            local pulse=1+math.sin(t*math.pi*6)*0.12
-            part.Size=Vector3.new(baseSize*pulse,baseSize*pulse,baseSize*pulse)
-            glow.Size=Vector3.new(baseSize*1.6*pulse,baseSize*1.6*pulse,baseSize*1.6*pulse)
-            glow.Position=part.Position
-        end
-    end)
 end
 
 local function spawnShockwave(position,color)
@@ -500,12 +509,15 @@ local function spawnShockwave(position,color)
             ring.Color=color; ring.Transparency=0.3; ring.Parent=workspace
             local start=tick(); local conn
             conn=RunService.Heartbeat:Connect(function()
-                local elapsed=tick()-start
-                if elapsed>1.2 or not ring.Parent then
-                    conn:Disconnect(); ring:Destroy(); return end
-                local scale=1+elapsed*28
-                ring.Size=Vector3.new(scale,scale,scale)
-                ring.Transparency=0.3+(elapsed/1.2)*0.7
+                local e=tick()-start
+                if e>1.2 or not ring.Parent then
+                    conn:Disconnect()
+                    if ring.Parent then ring:Destroy() end
+                    return
+                end
+                local s=1+e*28
+                ring.Size=Vector3.new(s,s,s)
+                ring.Transparency=0.3+(e/1.2)*0.7
             end)
         end)
     end
@@ -529,38 +541,57 @@ end
 --  FEATURE LOGIC
 -- ══════════════════════════════════════════
 
--- GRAB
+-- ── GRAB NEAREST (FIXED) ─────────────────
+-- No pointing required — pure distance scan across ALL players
+-- Works on players in air too — no ground check
 local function doGrab(lbl)
     if grabCooldown then return end
     grabCooldown=true
-    lbl.Text="Searching..."; lbl.TextColor3=Color3.fromRGB(200,150,255)
+    lbl.Text="Scanning..."; lbl.TextColor3=Color3.fromRGB(200,150,255)
+
     local myChar=localPlayer.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then lbl.Text="No character"; grabCooldown=false; return end
-    local best,bestDist=nil,currentReach
+    if not myRoot then
+        lbl.Text="No character found"
+        lbl.TextColor3=Color3.fromRGB(255,100,100)
+        grabCooldown=false; return
+    end
+
+    -- scan every player, no distance cap — find absolute nearest
+    local best=nil; local bestDist=math.huge
     for _,p in ipairs(Players:GetPlayers()) do
         if p==localPlayer then continue end
-        local rt=p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+        local ch=p.Character
+        local rt=ch and ch:FindFirstChild("HumanoidRootPart")
         if not rt then continue end
         local d=(rt.Position-myRoot.Position).Magnitude
-        if d<bestDist then bestDist=d; best=rt end
+        if d<bestDist then
+            bestDist=d; best=rt
+        end
     end
+
     if best then
+        -- teleport target directly in front of us regardless of where they are
+        local targetCF=CFrame.new(
+            myRoot.Position + myRoot.CFrame.LookVector*4 + Vector3.new(0,0.5,0)
+        )
+        best.CFrame=targetCF
         best.AssemblyLinearVelocity=Vector3.zero
-        best.CFrame=CFrame.new(myRoot.Position+myRoot.CFrame.LookVector*3+Vector3.new(0,1,0))
+        best.AssemblyAngularVelocity=Vector3.zero
         lbl.Text="Grabbed! ("..math.floor(bestDist).." st)"
         lbl.TextColor3=Color3.fromRGB(130,255,130)
     else
-        lbl.Text="No one in range"
+        lbl.Text="No players in server"
         lbl.TextColor3=Color3.fromRGB(255,130,130)
     end
-    task.delay(2,function()
+
+    task.delay(1.5,function()
         lbl.Text="Ready"; lbl.TextColor3=Color3.fromRGB(140,60,220)
         grabCooldown=false
     end)
 end
 
--- KILL AURA
+-- ── KILL AURA ────────────────────────────
 local function enableKillAura()
     connections.killAura=RunService.Heartbeat:Connect(function()
         local myRoot=localPlayer.Character and
@@ -584,7 +615,7 @@ local function disableKillAura()
         connections.killAura:Disconnect(); connections.killAura=nil end
 end
 
--- SILENT AIM
+-- ── SILENT AIM ───────────────────────────
 local function getNearestHead()
     local sc=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
     local best,bestDist=nil,silentAimFOV
@@ -601,7 +632,6 @@ local function getNearestHead()
     end
     return best
 end
-
 local function enableSilentAim()
     connections.silentAim=RunService.RenderStepped:Connect(function()
         if not state.silentAim then return end
@@ -622,30 +652,39 @@ local function disableSilentAim()
     if origCF then camera.CFrame=origCF; origCF=nil end
 end
 
--- FLING ALL
+-- ── FLING ALL (FIXED) ────────────────────
+-- Uses a repeated Heartbeat loop that fires every frame
+-- Forces velocity on EVERY player, no range limit
 local function doFlingAll()
     for _,p in ipairs(Players:GetPlayers()) do
         if p==localPlayer then continue end
-        local rt=p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+        local ch=p.Character
+        local rt=ch and ch:FindFirstChild("HumanoidRootPart")
         if not rt then continue end
+        -- set network ownership attempt
+        pcall(function() rt:SetNetworkOwner(localPlayer) end)
         rt.AssemblyLinearVelocity=Vector3.new(
             (math.random()-0.5)*flingAllPower*2,
-            flingAllPower*0.6,
-            (math.random()-0.5)*flingAllPower*2)
+            flingAllPower*0.8,
+            (math.random()-0.5)*flingAllPower*2
+        )
     end
 end
+
 local function enableFlingAll()
     connections.flingAll=RunService.Heartbeat:Connect(function()
         for _,p in ipairs(Players:GetPlayers()) do
             if p==localPlayer then continue end
-            local rt=p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+            local ch=p.Character
+            local rt=ch and ch:FindFirstChild("HumanoidRootPart")
             if not rt then continue end
-            if rt.AssemblyLinearVelocity.Magnitude<80 then
-                rt.AssemblyLinearVelocity=Vector3.new(
-                    (math.random()-0.5)*flingAllPower*2,
-                    flingAllPower*0.6,
-                    (math.random()-0.5)*flingAllPower*2)
-            end
+            pcall(function() rt:SetNetworkOwner(localPlayer) end)
+            -- re-apply every frame so they never land
+            rt.AssemblyLinearVelocity=Vector3.new(
+                (math.random()-0.5)*flingAllPower*2,
+                flingAllPower*0.8,
+                (math.random()-0.5)*flingAllPower*2
+            )
         end
     end)
 end
@@ -654,7 +693,7 @@ local function disableFlingAll()
         connections.flingAll:Disconnect(); connections.flingAll=nil end
 end
 
--- ESP
+-- ── ESP ──────────────────────────────────
 local espF=Instance.new("Folder")
 espF.Name="ESP_FTP"; espF.Parent=game:GetService("CoreGui")
 local function enableESP()
@@ -694,7 +733,7 @@ local function disableESP()
     for _,v in ipairs(espF:GetChildren()) do v:Destroy() end
 end
 
--- SPEED
+-- ── SPEED ────────────────────────────────
 local function enableSpeed()
     local hm=localPlayer.Character and
         localPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -710,7 +749,7 @@ local function disableSpeed()
     if hm then hm.WalkSpeed=16 end
 end
 
--- NOCLIP
+-- ── NOCLIP ───────────────────────────────
 local function enableNoclip()
     connections.noclip=RunService.Stepped:Connect(function()
         local ch=localPlayer.Character; if not ch then return end
@@ -728,7 +767,7 @@ local function disableNoclip()
     end
 end
 
--- INFINITE JUMP
+-- ── INFINITE JUMP ────────────────────────
 local function enableIJump()
     connections.ijump=UserInputService.JumpRequest:Connect(function()
         local hm=localPlayer.Character and
@@ -741,7 +780,7 @@ local function disableIJump()
         connections.ijump:Disconnect(); connections.ijump=nil end
 end
 
--- AUTO FLING
+-- ── AUTO FLING (nearby) ──────────────────
 local function enableFling()
     connections.fling=RunService.Heartbeat:Connect(function()
         local mr=localPlayer.Character and
@@ -751,7 +790,8 @@ local function enableFling()
             if p==localPlayer then continue end
             local rt=p.Character and p.Character:FindFirstChild("HumanoidRootPart")
             if not rt then continue end
-            if (rt.Position-mr.Position).Magnitude<60 then
+            if (rt.Position-mr.Position).Magnitude<autoFlingRange then
+                pcall(function() rt:SetNetworkOwner(localPlayer) end)
                 rt.AssemblyLinearVelocity=Vector3.new(
                     math.random(-1,1)*300,160,math.random(-1,1)*300)
             end
@@ -763,7 +803,7 @@ local function disableFling()
         connections.fling:Disconnect(); connections.fling=nil end
 end
 
--- FAR REACH
+-- ── FAR REACH ────────────────────────────
 local function applyReach(v)
     currentReach=v
     for _,o in ipairs(workspace:GetDescendants()) do
@@ -791,7 +831,7 @@ local function disableReach()
     end
 end
 
--- SWING PALLET
+-- ── SWING PALLET ─────────────────────────
 local STAGS={"pallet","swing","swingpart"}
 local function enableSwing()
     local mc=localPlayer.Character
@@ -840,7 +880,70 @@ local function disableSwing()
     local tmp=workspace:FindFirstChild("VA"); if tmp then tmp:Destroy() end
 end
 
--- THIRD PERSON
+-- ── PALLET FLY (no fall) ─────────────────
+-- Finds nearest pallet/platform, welds you to it via BodyPosition
+-- You hover on the pallet without falling off even if it moves
+local palletBody=nil
+local function enablePalletFly()
+    local mc=localPlayer.Character
+    local mr=mc and mc:FindFirstChild("HumanoidRootPart"); if not mr then return end
+
+    -- find nearest pallet-named part
+    local best,bd=nil,math.huge
+    for _,o in ipairs(workspace:GetDescendants()) do
+        if o:IsA("BasePart") then
+            for _,t in ipairs(STAGS) do
+                if o.Name:lower():find(t) then
+                    local d=(o.Position-mr.Position).Magnitude
+                    if d<bd then bd=d; best=o end; break
+                end
+            end
+        end
+    end
+
+    local targetPart=best
+    -- if no pallet found, create a floating platform above player
+    if not targetPart then
+        local plat=Instance.new("Part")
+        plat.Name="FlyPallet"; plat.Size=Vector3.new(8,1,8)
+        plat.Anchored=true; plat.CanCollide=true
+        plat.Material=Enum.Material.SmoothPlastic
+        plat.Color=Color3.fromRGB(100,0,180)
+        plat.Position=mr.Position+Vector3.new(0,5,0)
+        plat.Parent=workspace
+        targetPart=plat
+    end
+
+    -- disable humanoid fall state
+    local hm=mc:FindFirstChildOfClass("Humanoid")
+    if hm then hm:ChangeState(Enum.HumanoidStateType.Physics) end
+
+    -- BodyPosition keeps player locked above the pallet
+    palletBody=Instance.new("BodyPosition")
+    palletBody.MaxForce=Vector3.new(1e5,1e5,1e5)
+    palletBody.D=500
+    palletBody.P=10000
+    palletBody.Position=targetPart.Position+Vector3.new(0,4,0)
+    palletBody.Parent=mr
+
+    palletFlyConn=RunService.Heartbeat:Connect(function()
+        if not mr or not mr.Parent or not palletBody then return end
+        -- follow pallet if it moves, stay 4 studs above it
+        palletBody.Position=targetPart.Position+Vector3.new(0,4,0)
+    end)
+end
+local function disablePalletFly()
+    if palletFlyConn then palletFlyConn:Disconnect(); palletFlyConn=nil end
+    if palletBody then palletBody:Destroy(); palletBody=nil end
+    local hm=localPlayer.Character and
+        localPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hm then hm:ChangeState(Enum.HumanoidStateType.GettingUp) end
+    -- clean generated platform
+    local tmp=workspace:FindFirstChild("FlyPallet")
+    if tmp then tmp:Destroy() end
+end
+
+-- ── THIRD PERSON ─────────────────────────
 local defaultCameraMode=localPlayer.CameraMode
 local function enableThirdPerson()
     thirdPersonEnabled=true
@@ -850,25 +953,20 @@ local function enableThirdPerson()
 end
 local function disableThirdPerson()
     thirdPersonEnabled=false
-    if tpConn then tpConn:Disconnect(); tpConn=nil end
     localPlayer.CameraMode=defaultCameraMode
     localPlayer.CameraMinZoomDistance=0.5
     localPlayer.CameraMaxZoomDistance=400
 end
 
--- GOJO RED
+-- ── GOJO RED ─────────────────────────────
 local function castRed(statusLbl)
-    if redActive then return end
-    redActive=true
-    statusLbl.Text="Red — active"
-    statusLbl.TextColor3=Color3.fromRGB(255,80,80)
-    local myChar=localPlayer.Character
-    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then redActive=false; return end
-    local spawnPos=myRoot.Position+myRoot.CFrame.LookVector*6+Vector3.new(0,2,0)
+    if redActive then return end; redActive=true
+    statusLbl.Text="Red — active"; statusLbl.TextColor3=Color3.fromRGB(255,80,80)
+    local mc=localPlayer.Character
+    local mr=mc and mc:FindFirstChild("HumanoidRootPart")
+    if not mr then redActive=false; return end
+    local spawnPos=mr.Position+mr.CFrame.LookVector*6+Vector3.new(0,2,0)
     local rPart,rGlow=spawnSphere(spawnPos,Color3.fromRGB(255,40,40),3.5,"GojoRed")
-    addHighlight(rPart,Color3.fromRGB(255,80,80),Color3.fromRGB(255,0,0))
-    pulseSize(rPart,rGlow,3.5,2)
     local repelConn
     repelConn=RunService.Heartbeat:Connect(function()
         if not rPart or not rPart.Parent then repelConn:Disconnect(); return end
@@ -878,8 +976,9 @@ local function castRed(statusLbl)
             if not rt then continue end
             local dist=(rt.Position-spawnPos).Magnitude
             if dist<18 then
-                local pushDir=(rt.Position-spawnPos).Unit
-                rt.AssemblyLinearVelocity=pushDir*(18-dist)*12+Vector3.new(0,8,0)
+                pcall(function() rt:SetNetworkOwner(localPlayer) end)
+                rt.AssemblyLinearVelocity=(rt.Position-spawnPos).Unit*(18-dist)*14
+                    +Vector3.new(0,10,0)
             end
         end
     end)
@@ -900,19 +999,15 @@ local function castRed(statusLbl)
     end)
 end
 
--- GOJO BLUE
+-- ── GOJO BLUE ────────────────────────────
 local function castBlue(statusLbl)
-    if blueActive then return end
-    blueActive=true
-    statusLbl.Text="Blue — active"
-    statusLbl.TextColor3=Color3.fromRGB(80,140,255)
-    local myChar=localPlayer.Character
-    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then blueActive=false; return end
-    local spawnPos=myRoot.Position+myRoot.CFrame.LookVector*6+Vector3.new(0,2,0)
+    if blueActive then return end; blueActive=true
+    statusLbl.Text="Blue — active"; statusLbl.TextColor3=Color3.fromRGB(80,140,255)
+    local mc=localPlayer.Character
+    local mr=mc and mc:FindFirstChild("HumanoidRootPart")
+    if not mr then blueActive=false; return end
+    local spawnPos=mr.Position+mr.CFrame.LookVector*6+Vector3.new(0,2,0)
     local bPart,bGlow=spawnSphere(spawnPos,Color3.fromRGB(40,120,255),3.5,"GojoBlue")
-    addHighlight(bPart,Color3.fromRGB(80,160,255),Color3.fromRGB(0,100,255))
-    pulseSize(bPart,bGlow,3.5,2)
     local suckConn
     suckConn=RunService.Heartbeat:Connect(function()
         if not bPart or not bPart.Parent then suckConn:Disconnect(); return end
@@ -922,8 +1017,8 @@ local function castBlue(statusLbl)
             if not rt then continue end
             local dist=(rt.Position-spawnPos).Magnitude
             if dist<20 then
-                local pullDir=(spawnPos-rt.Position).Unit
-                rt.AssemblyLinearVelocity=pullDir*(20-dist)*10
+                pcall(function() rt:SetNetworkOwner(localPlayer) end)
+                rt.AssemblyLinearVelocity=(spawnPos-rt.Position).Unit*(20-dist)*12
             end
         end
     end)
@@ -944,96 +1039,90 @@ local function castBlue(statusLbl)
     end)
 end
 
--- HOLLOW PURPLE
+-- ── HOLLOW PURPLE (everyone sees it) ─────
 local function castHollowPurple(statusLbl)
-    if purpleActive then return end
-    purpleActive=true
-    local myChar=localPlayer.Character
-    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then purpleActive=false; return end
-    local centerPos=myRoot.Position+myRoot.CFrame.LookVector*8+Vector3.new(0,3,0)
+    if purpleActive then return end; purpleActive=true
+    local mc=localPlayer.Character
+    local mr=mc and mc:FindFirstChild("HumanoidRootPart")
+    if not mr then purpleActive=false; return end
+    local centerPos=mr.Position+mr.CFrame.LookVector*8+Vector3.new(0,3,0)
 
     statusLbl.Text="Charging Red..."
     statusLbl.TextColor3=Color3.fromRGB(255,80,80)
-    local rPos=centerPos-myRoot.CFrame.RightVector*5
+    local rPos=centerPos-mr.CFrame.RightVector*5
     local rPart,rGlow=spawnSphere(rPos,Color3.fromRGB(255,40,40),3,"HP_Red")
-    pulseSize(rPart,rGlow,3,1.2)
 
     task.wait(0.8)
     statusLbl.Text="Charging Blue..."
     statusLbl.TextColor3=Color3.fromRGB(80,140,255)
-    local bPos=centerPos+myRoot.CFrame.RightVector*5
+    local bPos=centerPos+mr.CFrame.RightVector*5
     local bPart,bGlow=spawnSphere(bPos,Color3.fromRGB(40,120,255),3,"HP_Blue")
-    pulseSize(bPart,bGlow,3,1.2)
 
     task.wait(0.9)
-    statusLbl.Text="Hollow Purple..."
+    statusLbl.Text="Hollow Purple!"
     statusLbl.TextColor3=Color3.fromRGB(200,80,255)
 
-    local travelT=0; local travelConn
-    travelConn=RunService.Heartbeat:Connect(function(dt)
-        travelT=travelT+dt
-        local progress=math.min(travelT/0.5,1)
+    -- travel both toward center
+    local tT=0; local tConn
+    tConn=RunService.Heartbeat:Connect(function(dt)
+        tT=tT+dt
+        local prog=math.min(tT/0.5,1)
         if rPart and rPart.Parent then
-            rPart.Position=rPos:Lerp(centerPos,progress)
-            rGlow.Position=rPart.Position end
+            rPart.Position=rPos:Lerp(centerPos,prog); rGlow.Position=rPart.Position end
         if bPart and bPart.Parent then
-            bPart.Position=bPos:Lerp(centerPos,progress)
-            bGlow.Position=bPart.Position end
-        if progress>=1 then travelConn:Disconnect() end
+            bPart.Position=bPos:Lerp(centerPos,prog); bGlow.Position=bPart.Position end
+        if prog>=1 then tConn:Disconnect() end
     end)
-
     task.wait(0.55)
-    if rPart and rPart.Parent then rPart:Destroy() end
-    if rGlow and rGlow.Parent then rGlow:Destroy() end
-    if bPart and bPart.Parent then bPart:Destroy() end
-    if bGlow and bGlow.Parent then bGlow:Destroy() end
 
-    local hp,hpGlow=spawnSphere(centerPos,Color3.fromRGB(180,50,255),5,"HollowPurple")
-    addHighlight(hp,Color3.fromRGB(200,80,255),Color3.fromRGB(150,0,255))
+    -- destroy red + blue
+    for _,v in ipairs({rPart,rGlow,bPart,bGlow}) do
+        if v and v.Parent then v:Destroy() end
+    end
 
+    -- spawn hollow purple — visible to everyone via workspace
+    local hp,hpGlow=spawnSphere(centerPos,Color3.fromRGB(180,50,255),6,"HollowPurple")
     local core=Instance.new("Part")
-    core.Shape=Enum.PartType.Ball; core.Size=Vector3.new(2.5,2.5,2.5)
+    core.Shape=Enum.PartType.Ball; core.Size=Vector3.new(3,3,3)
     core.Position=centerPos; core.Anchored=true; core.CanCollide=false
     core.CastShadow=false; core.Material=Enum.Material.Neon
     core.Color=Color3.fromRGB(240,180,255); core.Parent=workspace
 
     spawnShockwave(centerPos,Color3.fromRGB(180,50,255))
-    blastDamage(centerPos,35)
+    blastDamage(centerPos,40)
 
-    local beamT=0; local beamConn
-    beamConn=RunService.Heartbeat:Connect(function(dt)
-        beamT=beamT+dt
-        if beamT>2 or not hp.Parent then beamConn:Disconnect(); return end
-        local move=myRoot.CFrame.LookVector*dt*55
+    -- beam travels forward
+    local bT=0; local bConn
+    bConn=RunService.Heartbeat:Connect(function(dt)
+        bT=bT+dt
+        if bT>2.5 or not hp.Parent then bConn:Disconnect(); return end
+        local move=mr.CFrame.LookVector*dt*55
         hp.Position=hp.Position+move
         hpGlow.Position=hpGlow.Position+move
         core.Position=core.Position+move
-        blastDamage(hp.Position,10)
-        local s=5+beamT*2
-        hp.Size=Vector3.new(s,s,s); hpGlow.Size=Vector3.new(s*1.5,s*1.5,s*1.5)
+        blastDamage(hp.Position,12)
+        local s=6+bT*2
+        hp.Size=Vector3.new(s,s,s)
+        hpGlow.Size=Vector3.new(s*1.5,s*1.5,s*1.5)
     end)
 
-    task.delay(2,function()
-        beamConn:Disconnect()
-        if hp and hp.Parent then
-            TweenService:Create(hp,TweenInfo.new(0.5),{Transparency=1}):Play() end
-        if hpGlow and hpGlow.Parent then
-            TweenService:Create(hpGlow,TweenInfo.new(0.5),{Transparency=1}):Play() end
-        if core and core.Parent then
-            TweenService:Create(core,TweenInfo.new(0.5),{Transparency=1}):Play() end
-        task.delay(0.5,function()
-            if hp and hp.Parent then hp:Destroy() end
-            if hpGlow and hpGlow.Parent then hpGlow:Destroy() end
-            if core and core.Parent then core:Destroy() end
-        end)
+    task.delay(2.5,function()
+        bConn:Disconnect()
+        for _,v in ipairs({hp,hpGlow,core}) do
+            if v and v.Parent then
+                TweenService:Create(v,TweenInfo.new(0.5),{Transparency=1}):Play()
+                task.delay(0.5,function()
+                    if v and v.Parent then v:Destroy() end
+                end)
+            end
+        end
         statusLbl.Text="Ready"
         statusLbl.TextColor3=Color3.fromRGB(200,80,255)
         purpleActive=false
     end)
 end
 
--- FPS BOOSTER
+-- ── FPS BOOSTER ──────────────────────────
 local function enablePotato()
     savedLighting.ambient=Lighting.Ambient
     savedLighting.outAmb=Lighting.OutdoorAmbient
@@ -1120,9 +1209,9 @@ end
 local pCombat=makePage("combat")
 
 sec(pCombat,"Grab")
-sliderRow(pCombat,"Grab range",5,200,40," st",function(v) currentReach=v end)
+sliderRow(pCombat,"Grab range",5,500,999," st",function(v) currentReach=v end)
 local grabSt=mkStatusLbl(pCombat)
-actionBtn(pCombat,"Grab nearest player",
+actionBtn(pCombat,"⚡ Grab nearest player",
     Color3.fromRGB(60,0,120),Color3.fromRGB(140,60,220),
     Color3.fromRGB(220,170,255),function() doGrab(grabSt) end)
 
@@ -1138,14 +1227,13 @@ sliderRow(pCombat,"Silent aim FOV",10,300,80," px",function(v) silentAimFOV=v en
 
 sec(pCombat,"Fling all")
 toggleRow(pCombat,"Fling all  (continuous)","flingAll",enableFlingAll,disableFlingAll)
-sliderRow(pCombat,"Fling power",100,1000,500,"",function(v) flingAllPower=v end)
-actionBtn(pCombat,"Fling all once",
+sliderRow(pCombat,"Fling power",100,2000,500,"",function(v) flingAllPower=v end)
+actionBtn(pCombat,"💥 Fling all once",
     Color3.fromRGB(80,10,10),Color3.fromRGB(200,60,60),
     Color3.fromRGB(255,180,180),doFlingAll)
 
 sec(pCombat,"Vision")
 toggleRow(pCombat,"ESP  (box + HP + name)","esp",enableESP,disableESP)
-sliderRow(pCombat,"FOV indicator",20,120,70,"°",function(v) currentFOV=v end)
 
 sec(pCombat,"Reach")
 toggleRow(pCombat,"Far reach","reach",enableReach,disableReach)
@@ -1158,19 +1246,19 @@ toggleRow(pCombat,"Third person view","thirdPerson",
 
 local redSt=mkStatusLbl(pCombat)
 redSt.TextColor3=Color3.fromRGB(255,80,80)
-actionBtn(pCombat,"Red  — divergence (repel)",
+actionBtn(pCombat,"🔴 Red — divergence (repel)",
     Color3.fromRGB(80,8,8),Color3.fromRGB(220,50,50),
     Color3.fromRGB(255,160,160),function() castRed(redSt) end)
 
 local blueSt=mkStatusLbl(pCombat)
 blueSt.TextColor3=Color3.fromRGB(80,140,255)
-actionBtn(pCombat,"Blue  — convergence (pull)",
+actionBtn(pCombat,"🔵 Blue — convergence (pull)",
     Color3.fromRGB(8,20,80),Color3.fromRGB(50,100,220),
     Color3.fromRGB(160,200,255),function() castBlue(blueSt) end)
 
 local purpleSt=mkStatusLbl(pCombat)
 purpleSt.TextColor3=Color3.fromRGB(200,80,255)
-actionBtn(pCombat,"Hollow Purple  — combine",
+actionBtn(pCombat,"✦ Hollow Purple — combine",
     Color3.fromRGB(50,0,90),Color3.fromRGB(160,40,255),
     Color3.fromRGB(220,150,255),function() castHollowPurple(purpleSt) end)
 
@@ -1180,12 +1268,17 @@ sec(pMove,"Movement")
 toggleRow(pMove,"Speed hack  (80 WS)","speed",enableSpeed,disableSpeed)
 toggleRow(pMove,"Noclip","noclip",enableNoclip,disableNoclip)
 toggleRow(pMove,"Infinite jump","ijump",enableIJump,disableIJump)
-sec(pMove,"Fling")
-toggleRow(pMove,"Auto fling  (range 60)","fling",enableFling,disableFling)
-sec(pMove,"Swing")
-toggleRow(pMove,"Swing pallet","swing",enableSwing,disableSwing)
 
--- FPS PAGE
+sec(pMove,"Fling")
+toggleRow(pMove,"Auto fling  (nearby)","fling",enableFling,disableFling)
+sliderRow(pMove,"Auto fling range",10,200,60," st",function(v) autoFlingRange=v end)
+sliderRow(pMove,"Fling power",100,2000,500,"",function(v) flingAllPower=v end)
+
+sec(pMove,"Pallet")
+toggleRow(pMove,"Swing pallet","swing",enableSwing,disableSwing)
+toggleRow(pMove,"Pallet fly  (no fall)","palletFly",enablePalletFly,disablePalletFly)
+
+-- FPS BOOST PAGE
 local pFPS=makePage("fps")
 sec(pFPS,"Graphics optimizer")
 toggleRow(pFPS,"Potato graphics","fps_potato",enablePotato,disablePotato)
